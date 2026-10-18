@@ -1,0 +1,49 @@
+{
+  "_comment": "오늘성경 원격 설정 (구글 드라이브 todaybible_config.json, 링크 공개). 앱은 6시간마다 받는다(릴리스 빌드만). 드라이브에서 이 파일을 '새 버전 업로드'로 바꾸면 주소가 그대로 유지된다. 키를 빼면 앱 기본값 유지. 유닛 ID에 \"test\"를 넣으면 구글 테스트 유닛. 전면광고 키 이름은 성경일독Q Remote Config와 맞췄다.",
+
+  "ads_enabled": true,
+  "native_locked": "ca-app-pub-9034723652971953/5358313975",
+  "native_settings": "ca-app-pub-9034723652971953/1781286187",
+  "native_popup": "ca-app-pub-9034723652971953/3853660615",
+  "app_open": "ca-app-pub-9034723652971953/7663159095",
+  "rewarded_adfree": "ca-app-pub-9034723652971953/1321112026",
+  "interstitial": "ca-app-pub-9034723652971953/8242879067",
+
+  "native_unlocked": "ca-app-pub-9034723652971953/4407449524",
+  "ad_position": "bottom",
+  "unlock_ad_mode": "none",
+
+  "new_user_ad_free_hours": 24,
+  "new_user_ad_free_unlocks": 20,
+  "refresh_every_n_verses": 3,
+  "max_loads_per_session": 2,
+  "max_impressions_per_day": 200,
+  "nofill_fallback": "verse_card",
+
+  "coupang_url": "https://link.coupang.com/re/AFFSDP?lptag=AF2993024&subid=lock",
+  "coupang_bubble": "오늘의 특가",
+
+  "continuous_use_popup_enabled": true,
+  "continuous_use_min_install_days": 1,
+  "continuous_use_max_per_day": 12,
+
+  "app_open_enabled": true,
+  "app_open_min_install_days": 3,
+  "app_open_max_per_day": 3,
+  "app_open_load_timeout_ms": 3000,
+
+  "show_interstitial_ad": true,
+  "interstitial_min_install_days": 1,
+  "max_interstitial_ads": 4,
+  "min_interstitial_delay": 20,
+  "interstitial_show_useapp_time": 60,
+  "interstitial_chapter_turns": 3,
+  "interstitial_network_order": "admob,coupang",
+
+  "coupang_interstitial_v2": true,
+  "coupang_interstitial_max_per_day": 2,
+  "coupang_widget_id": "1040521",
+  "coupang_widget_template": "carousel",
+  "coupang_tracking_code": "AF2993024",
+  "coupang_interstitial_close_delay_sec": 3
+}
