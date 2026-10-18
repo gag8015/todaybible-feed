@@ -2,6 +2,8 @@
 # 필요한 설정: 저장소 Settings > Secrets and variables > Actions > KMA_SERVICE_KEY,
 #              Settings > Pages > Source = GitHub Actions.
 # 실패하면 배포하지 않으므로 직전 weather.json이 그대로 남는다.
+# GitHub 서버 중 일부 IP는 공공데이터포털 접속이 막혀 있어(2026-10-18 확인: 실행마다 되기도 안 되기도 함)
+# 접속 확인에 실패하면 새 서버에서 최대 3번까지 다시 시도한다(잡마다 서버·IP가 바뀜).
 name: weather
 
 on:
@@ -20,8 +22,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  try1:
     runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.fetch.outcome }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,6 +34,51 @@ jobs:
       - name: Test
         run: python -I test_fetch.py
       - name: Fetch KMA forecast
+        id: fetch
+        continue-on-error: true
+        env:
+          KMA_SERVICE_KEY: ${{ secrets.KMA_SERVICE_KEY }}
+        run: python -I fetch_kma.py
+      - if: steps.fetch.outcome == 'success'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  try2:
+    needs: try1
+    if: always() && needs.try1.outputs.ok != 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.fetch.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch KMA forecast
+        id: fetch
+        continue-on-error: true
+        env:
+          KMA_SERVICE_KEY: ${{ secrets.KMA_SERVICE_KEY }}
+        run: python -I fetch_kma.py
+      - if: steps.fetch.outcome == 'success'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  try3:
+    needs: [try1, try2]
+    if: always() && needs.try1.outputs.ok != 'success' && needs.try2.outputs.ok != 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.fetch.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch KMA forecast
+        id: fetch
         env:
           KMA_SERVICE_KEY: ${{ secrets.KMA_SERVICE_KEY }}
         run: python -I fetch_kma.py
@@ -38,7 +87,8 @@ jobs:
           path: site
 
   deploy:
-    needs: build
+    needs: [try1, try2, try3]
+    if: always() && (needs.try1.outputs.ok == 'success' || needs.try2.outputs.ok == 'success' || needs.try3.result == 'success')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
