@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# weather.json은 Actions가 만들어 Pages로만 배포한다 (저장소에는 안 올림)
+site/weather.json
