@@ -1,0 +1,14 @@
+# 접속 점검(일회용): GitHub 서버에서 날씨 API들에 닿는지 확인
+name: diag
+on:
+  workflow_dispatch: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reachability
+        run: |
+          for u in https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst https://apihub.kma.go.kr/ https://www.kma.go.kr/ https://api.met.no/weatherapi/locationforecast/2.0/status; do
+            code=$(curl -s -o /dev/null -m 12 -w "%{http_code} %{time_total}s" "$u" || echo "FAIL")
+            echo "$u => $code"
+          done
