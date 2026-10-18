@@ -72,7 +72,7 @@ def fetch_grid(key: str, base_date: str, base_time: str, nx: int, ny: int) -> li
     for attempt in range(3):
         try:
             req = urllib.request.Request(f"{ENDPOINT}?{q}", headers={"User-Agent": "TodayBibleWeatherFeed/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:
                 body = json.loads(r.read().decode("utf-8"))
             header = body["response"]["header"]
             if header.get("resultCode") != "00":
@@ -159,11 +159,17 @@ def main() -> None:
     print(f"regions={len(regions)} grids={len(grids)} base={base_date} {base_time}")
 
     data, fails = {}, []
-    for nx, ny in grids:
+    for i, (nx, ny) in enumerate(grids):
         try:
             data[f"{nx}_{ny}"] = summarize(fetch_grid(key, base_date, base_time, nx, ny), now)
         except Exception as e:  # noqa: BLE001
             fails.append(str(e))
+            print("  fail:", e, flush=True)
+        # 처음 5개가 전부 실패하면 접속 자체가 막힌 것 → 오래 붙잡지 말고 바로 중단
+        if i == 4 and not data:
+            sys.exit("처음 5개 격자가 모두 실패했습니다(접속 차단·키 오류 의심). 기존 파일을 유지합니다.")
+        if i % 25 == 0:
+            print(f"  progress {i + 1}/{len(grids)} ok={len(data)}", flush=True)
         time.sleep(0.15)
 
     print(f"ok={len(data)} fail={len(fails)}")
