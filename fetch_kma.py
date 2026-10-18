@@ -68,13 +68,14 @@ def service_key() -> str:
     return key if "%" in key else urllib.parse.quote(key, safe="")
 
 
-def fetch_grid(key: str, base_date: str, base_time: str, nx: int, ny: int, rows: int = 700) -> list[dict]:
+def fetch_grid(key: str, base_date: str, base_time: str, nx: int, ny: int, rows: int = 700,
+               timeout: int = 30, attempts: int = 3) -> list[dict]:
     q = f"serviceKey={key}&pageNo=1&numOfRows={rows}&dataType=JSON&base_date={base_date}&base_time={base_time}&nx={nx}&ny={ny}"
     last = None
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             req = urllib.request.Request(f"{ENDPOINT}?{q}", headers={"User-Agent": "TodayBibleWeatherFeed/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 body = json.loads(r.read().decode("utf-8"))
             header = body["response"]["header"]
             if header.get("resultCode") != "00":
@@ -156,6 +157,14 @@ def main() -> None:
     base_date, base_time = latest_base(now)
     key = service_key()
     print(f"regions={len(regions)} grids={len(grids)} base={base_date} {base_time}")
+
+    # GitHub 서버 중 일부 IP는 공공데이터포털에 접속이 안 된다(연결 시간 초과). 먼저 짧게 확인하고
+    # 안 되면 바로 실패 → 워크플로가 새 서버(다른 IP)에서 다시 시도한다.
+    try:
+        fetch_grid(key, base_date, base_time, *grids[0], rows=10, timeout=10, attempts=2)
+        print("preflight ok", flush=True)
+    except Exception as e:  # noqa: BLE001
+        sys.exit(f"공공데이터포털 접속 불가(이 서버 IP 차단 의심): {e}")
 
     # 05시 이후 발표만 받으면 이미 지난 오늘 최저(06시)·최고(15시)가 빠진다 → 오늘 05시 발표를 먼저 깔고 최신으로 덮는다.
     with_morning = base_date == now.strftime("%Y%m%d") and base_time > MORNING_BASE
