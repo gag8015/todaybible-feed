@@ -67,12 +67,12 @@ def service_key() -> str:
 
 
 def fetch_grid(key: str, base_date: str, base_time: str, nx: int, ny: int) -> list[dict]:
-    q = f"serviceKey={key}&pageNo=1&numOfRows=1000&dataType=JSON&base_date={base_date}&base_time={base_time}&nx={nx}&ny={ny}"
+    q = f"serviceKey={key}&pageNo=1&numOfRows=700&dataType=JSON&base_date={base_date}&base_time={base_time}&nx={nx}&ny={ny}"
     last = None
     for attempt in range(3):
         try:
             req = urllib.request.Request(f"{ENDPOINT}?{q}", headers={"User-Agent": "TodayBibleWeatherFeed/1.0"})
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=30) as r:
                 body = json.loads(r.read().decode("utf-8"))
             header = body["response"]["header"]
             if header.get("resultCode") != "00":
@@ -165,9 +165,9 @@ def main() -> None:
         except Exception as e:  # noqa: BLE001
             fails.append(str(e))
             print("  fail:", e, flush=True)
-        # 처음 5개가 전부 실패하면 접속 자체가 막힌 것 → 오래 붙잡지 말고 바로 중단
-        if i == 4 and not data:
-            sys.exit("처음 5개 격자가 모두 실패했습니다(접속 차단·키 오류 의심). 기존 파일을 유지합니다.")
+        # 처음 10개가 전부 실패하면 접속 자체가 막힌 것 → 오래 붙잡지 말고 바로 중단
+        if i == 9 and not data:
+            sys.exit("처음 10개 격자가 모두 실패했습니다(접속 차단·키 오류 의심). 기존 파일을 유지합니다.")
         if i % 25 == 0:
             print(f"  progress {i + 1}/{len(grids)} ok={len(data)}", flush=True)
         time.sleep(0.15)
