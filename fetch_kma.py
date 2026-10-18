@@ -25,6 +25,8 @@ ENDPOINT = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageF
 KST = dt.timezone(dt.timedelta(hours=9))
 BASE_TIMES = ["0200", "0500", "0800", "1100", "1400", "1700", "2000", "2300"]
 MAX_FAIL_RATIO = 0.3
+MAX_HOURS = 60          # 시간별 값 최대 개수 (실행이 하루 이상 실패해도 버틸 만큼)
+MORNING_BASE = "0500"   # 오늘 최고·최저(TMX·TMN)가 다 들어 있는 발표 — 낮·밤 실행 때 같이 받아 합친다
 
 
 def latlon_to_grid(lat: float, lon: float) -> tuple[int, int]:
@@ -66,8 +68,8 @@ def service_key() -> str:
     return key if "%" in key else urllib.parse.quote(key, safe="")
 
 
-def fetch_grid(key: str, base_date: str, base_time: str, nx: int, ny: int) -> list[dict]:
-    q = f"serviceKey={key}&pageNo=1&numOfRows=700&dataType=JSON&base_date={base_date}&base_time={base_time}&nx={nx}&ny={ny}"
+def fetch_grid(key: str, base_date: str, base_time: str, nx: int, ny: int, rows: int = 700) -> list[dict]:
+    q = f"serviceKey={key}&pageNo=1&numOfRows={rows}&dataType=JSON&base_date={base_date}&base_time={base_time}&nx={nx}&ny={ny}"
     last = None
     for attempt in range(3):
         try:
@@ -100,54 +102,51 @@ def parse_pcp(v: str) -> float:
         return 0.0
 
 
-def summarize(items: list[dict], now_kst: dt.datetime) -> dict:
-    """오늘(한국 날짜)·내일 요약 + 지금 시각에 가장 가까운 예보."""
+def merge(*item_lists: list[dict]) -> dict[str, dict]:
+    """발표 여러 개를 시각별로 합친다. 뒤에 온(더 최근) 발표가 같은 시각·항목을 덮어쓴다."""
     by_time: dict[str, dict] = {}
-    for it in items:
-        key = it["fcstDate"] + it["fcstTime"]
-        by_time.setdefault(key, {})[it["category"]] = it["fcstValue"]
-    keys = sorted(by_time)
-    today = now_kst.strftime("%Y%m%d")
-    tomorrow = (now_kst + dt.timedelta(days=1)).strftime("%Y%m%d")
-    now_key = now_kst.strftime("%Y%m%d%H00")
+    for items in item_lists:
+        for it in items:
+            by_time.setdefault(it["fcstDate"] + it["fcstTime"], {})[it["category"]] = it["fcstValue"]
+    return by_time
 
-    def day(d: str) -> dict | None:
-        ks = [k for k in keys if k.startswith(d)]
-        if not ks:
-            return None
+
+def _num(v: float):
+    return int(v) if float(v).is_integer() else round(float(v), 1)
+
+
+def summarize(by_time: dict[str, dict], max_hours: int = MAX_HOURS) -> dict:
+    """격자 하나 → 시간별(기온·하늘·강수형태) + 날짜별 요약.
+    앱이 '지금 시각'과 '오늘 날짜'로 직접 골라 쓰므로 파일이 몇 시간 늦거나 자정을 넘겨도 맞는 값이 나온다."""
+    hours = sorted(k for k in by_time if "TMP" in by_time[k])
+    start = dt.datetime.strptime(hours[0], "%Y%m%d%H%M")
+    t, sky, pty = [], [], []
+    prev = by_time[hours[0]]
+    for i in range(max_hours):
+        k = (start + dt.timedelta(hours=i)).strftime("%Y%m%d%H%M")
+        if k > hours[-1]:
+            break
+        cur = by_time.get(k) if k in by_time and "TMP" in by_time[k] else prev
+        prev = cur
+        t.append(_num(cur["TMP"]))
+        sky.append(str(int(cur.get("SKY", 1)) % 10))
+        pty.append(str(int(cur.get("PTY", 0)) % 10))
+
+    days = {}
+    for d in sorted({k[:8] for k in hours}):
+        ks = [k for k in sorted(by_time) if k.startswith(d)]
         temps = [float(by_time[k]["TMP"]) for k in ks if "TMP" in by_time[k]]
         tmx = next((float(by_time[k]["TMX"]) for k in ks if "TMX" in by_time[k]), None)
         tmn = next((float(by_time[k]["TMN"]) for k in ks if "TMN" in by_time[k]), None)
         pops = [int(by_time[k]["POP"]) for k in ks if "POP" in by_time[k]]
-        rain = sum(parse_pcp(by_time[k].get("PCP", "")) for k in ks)
-        ptys = [int(by_time[k].get("PTY", 0)) for k in ks]
-        return {
-            "max": round(max([tmx] if tmx is not None else temps) if (temps or tmx is not None) else 0, 1),
-            "min": round(min([tmn] if tmn is not None else temps) if (temps or tmn is not None) else 0, 1),
+        days[d] = {
+            "max": _num(tmx if tmx is not None else max(temps)),
+            "min": _num(tmn if tmn is not None else min(temps)),
             "pop": max(pops) if pops else 0,
-            "rain": round(rain, 1),
-            "pty": max(ptys) if ptys else 0,
+            "rain": _num(round(sum(parse_pcp(by_time[k].get("PCP", "")) for k in ks), 1)),
+            "pty": max(int(by_time[k].get("PTY", 0)) for k in ks),
         }
-
-    cur_key = next((k for k in keys if k >= now_key), keys[0])
-    cur = by_time[cur_key]
-    out = {
-        "t": float(cur.get("TMP", 0)),
-        "sky": int(cur.get("SKY", 1)),
-        "pty": int(cur.get("PTY", 0)),
-        "reh": int(cur.get("REH", 0)),
-        "wsd": float(cur.get("WSD", 0)),
-        "at": cur_key,
-    }
-    td, tm = day(today), day(tomorrow)
-    if td:
-        # 오늘 최고·최저에는 지금 기온도 넣는다 (발표 시각 이후만 남은 경우 보정)
-        td["max"] = max(td["max"], out["t"])
-        td["min"] = min(td["min"], out["t"])
-        out["today"] = td
-    if tm:
-        out["tomorrow"] = tm
-    return out
+    return {"at": hours[0], "t": t, "sky": "".join(sky), "pty": "".join(pty), "days": days}
 
 
 def main() -> None:
@@ -158,10 +157,19 @@ def main() -> None:
     key = service_key()
     print(f"regions={len(regions)} grids={len(grids)} base={base_date} {base_time}")
 
+    # 05시 이후 발표만 받으면 이미 지난 오늘 최저(06시)·최고(15시)가 빠진다 → 오늘 05시 발표를 먼저 깔고 최신으로 덮는다.
+    with_morning = base_date == now.strftime("%Y%m%d") and base_time > MORNING_BASE
     data, fails = {}, []
     for i, (nx, ny) in enumerate(grids):
         try:
-            data[f"{nx}_{ny}"] = summarize(fetch_grid(key, base_date, base_time, nx, ny), now)
+            latest = fetch_grid(key, base_date, base_time, nx, ny)
+            morning = []
+            if with_morning:
+                try:
+                    morning = fetch_grid(key, base_date, MORNING_BASE, nx, ny, rows=300)
+                except Exception as e:  # noqa: BLE001 — 없어도 최신 발표만으로 만든다
+                    print("  morning fail:", e, flush=True)
+            data[f"{nx}_{ny}"] = summarize(merge(morning, latest))
         except Exception as e:  # noqa: BLE001
             fails.append(str(e))
             print("  fail:", e, flush=True)
@@ -180,6 +188,7 @@ def main() -> None:
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({
+        "v": 2,
         "updated": now.isoformat(timespec="minutes"),
         "base": f"{base_date} {base_time}",
         "source": "기상청",
