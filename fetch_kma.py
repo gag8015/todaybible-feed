@@ -150,6 +150,19 @@ def summarize(by_time: dict[str, dict], max_hours: int = MAX_HOURS) -> dict:
     return {"at": hours[0], "t": t, "sky": "".join(sky), "pty": "".join(pty), "days": days}
 
 
+PUBLISHED_URL = os.environ.get("FEED_URL", "https://gag8015.github.io/todaybible-feed/weather.json")
+
+
+def fetch_published() -> dict | None:
+    try:
+        req = urllib.request.Request(f"{PUBLISHED_URL}?t={int(time.time())}", headers={"User-Agent": "TodayBibleWeatherFeed/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001 — 없으면 새로 만든다
+        print("published file not available:", e)
+        return None
+
+
 def main() -> None:
     regions = json.loads(REGIONS.read_text(encoding="utf-8"))
     grids = sorted({(r["nx"], r["ny"]) for r in regions})
@@ -157,6 +170,15 @@ def main() -> None:
     base_date, base_time = latest_base(now)
     key = service_key()
     print(f"regions={len(regions)} grids={len(grids)} base={base_date} {base_time}")
+
+    # 매시간 돌지만 기상청 발표는 3시간마다 → 이미 이 발표로 만든 파일이 게시돼 있으면 기상청을 부르지 않고
+    # 그 파일을 그대로 다시 게시한다 (호출 수 유지, GitHub가 실행을 건너뛰거나 늦어도 다음 시간에 따라잡음).
+    published = fetch_published()
+    if published and published.get("v") == 2 and published.get("base") == f"{base_date} {base_time}":
+        OUT.parent.mkdir(parents=True, exist_ok=True)
+        OUT.write_text(json.dumps(published, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print("already published for this base, republish as-is")
+        return
 
     # GitHub 서버 중 일부 IP는 공공데이터포털에 접속이 안 된다(연결 시간 초과). 먼저 짧게 확인하고
     # 안 되면 바로 실패 → 워크플로가 새 서버(다른 IP)에서 다시 시도한다.
